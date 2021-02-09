@@ -10,9 +10,7 @@
         "magento/module-catalog": "*",
         "magento/module-swatches": "*",
         "magento/module-store": "*",
-        "magento/module-inventory-api": "*",
         "magento/module-eav": "*",
-        "magento/module-inventory-catalog": "*",
         "magento/module-catalog-inventory": "*",
         "magento/module-catalog-graph-ql": "^100.3"
     },

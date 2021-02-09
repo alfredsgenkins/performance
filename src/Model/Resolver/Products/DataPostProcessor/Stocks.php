@@ -10,15 +10,14 @@ declare(strict_types=1);
 
 namespace ScandiPWA\Performance\Model\Resolver\Products\DataPostProcessor;
 
-use Magento\CatalogInventory\Model\Configuration;
+use Magento\CatalogInventory\Api\Data\StockStatusInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
-use Magento\InventoryApi\Api\Data\SourceItemInterface;
-use Magento\InventoryApi\Api\SourceItemRepositoryInterface;
-use Magento\Store\Model\ScopeInterface;
 use ScandiPWA\Performance\Api\ProductsDataPostProcessorInterface;
 use ScandiPWA\Performance\Model\Resolver\ResolveInfoFieldsTrait;
+use Magento\CatalogInventory\Api\StockStatusCriteriaInterfaceFactory;
+use Magento\CatalogInventory\Api\StockConfigurationInterface;
+use Magento\CatalogInventory\Api\StockStatusRepositoryInterface;
 
 /**
  * Class Images
@@ -37,9 +36,19 @@ class Stocks implements ProductsDataPostProcessorInterface
     const OUT_OF_STOCK = 'OUT_OF_STOCK';
 
     /**
-     * @var SourceItemRepositoryInterface
+     * @var StockStatusCriteriaInterfaceFactory
      */
-    protected $stockRepository;
+    protected $stock;
+
+    /**
+     * @var StockStatusRepositoryInterface
+     */
+    protected $stockStatusRepository;
+
+    /**
+     * @var StockConfigurationInterface
+     */
+    protected $stockConfiguration;
 
     /**
      * @var SearchCriteriaBuilder
@@ -53,17 +62,23 @@ class Stocks implements ProductsDataPostProcessorInterface
 
     /**
      * Stocks constructor.
-     * @param SourceItemRepositoryInterface $stockRepository
+     * @param StockStatusCriteriaInterfaceFactory $stock
      * @param SearchCriteriaBuilder $searchCriteriaBuilder
      * @param ScopeConfigInterface $scopeConfig
+     * @param StockConfigurationInterface $stockConfiguration
+     * @param StockStatusRepositoryInterface $stockItemRepository
      */
     public function __construct(
-        SourceItemRepositoryInterface $stockRepository,
+        StockStatusCriteriaInterfaceFactory $stock,
         SearchCriteriaBuilder $searchCriteriaBuilder,
-        ScopeConfigInterface $scopeConfig
+        ScopeConfigInterface $scopeConfig,
+        StockConfigurationInterface $stockConfiguration,
+        StockStatusRepositoryInterface $stockStatusRepository
     ) {
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
-        $this->stockRepository = $stockRepository;
+        $this->stockConfiguration = $stockConfiguration;
+        $this->stockStatusRepository = $stockStatusRepository;
+        $this->stock = $stock;
         $this->scopeConfig = $scopeConfig;
     }
 
@@ -115,9 +130,15 @@ class Stocks implements ProductsDataPostProcessorInterface
             };
         }
 
-        $productSKUs = array_map(function ($product) {
-            return $product->getSku();
+        $productIds = array_map(function ($product) {
+            return $product->getId();
         }, $products);
+
+        $criteria = $this->stock->create();
+        $criteria->addField('products_filter', $productIds);
+        $criteria->setScopeFilter($this->stockConfiguration->getDefaultScopeId());
+        $collection = $this->stockStatusRepository->getList($criteria);
+        $stockStatuses = $collection->getItems();
 
         $thresholdQty = 0;
 
@@ -128,43 +149,26 @@ class Stocks implements ProductsDataPostProcessorInterface
             );
         }
 
-        $criteria = $this->searchCriteriaBuilder
-            ->addFilter(SourceItemInterface::SKU, $productSKUs, 'in')
-            ->create();
-
-        $stockItems = $this->stockRepository->getList($criteria)->getItems();
-
-        if (!count($stockItems)) {
+        if (!count($stockStatuses)) {
             return function (&$productData) {
             };
         }
 
-        $formattedStocks = [];
-
-        foreach ($stockItems as $stockItem) {
-            $inStock = $stockItem->getStatus() === SourceItemInterface::STATUS_IN_STOCK;
+        foreach ($stockStatuses as $stockStatus) {
+            $inStock = $stockStatus->getStockStatus() === StockStatusInterface::STATUS_IN_STOCK;
 
             $leftInStock = null;
-            $qty = $stockItem->getQuantity();
+            $qty = $stockStatus->getQty();
 
             if ($thresholdQty !== (float) 0) {
                 $isThresholdPassed = $qty <= $thresholdQty;
                 $leftInStock = $isThresholdPassed ? $qty : null;
             }
 
-            $formattedStocks[$stockItem->getSku()] = [
+            $productStocks[$stockStatus->getProductId()] = [
                 self::STOCK_STATUS => $inStock ? self::IN_STOCK : self::OUT_OF_STOCK,
                 self::ONLY_X_LEFT_IN_STOCK => $leftInStock
             ];
-        }
-
-        foreach ($products as $product) {
-            $productId = $product->getId();
-            $productSku = $product->getSku();
-
-            if (isset($formattedStocks[$productSku])) {
-                $productStocks[$productId] = $formattedStocks[$productSku];
-            }
         }
 
         return function (&$productData) use ($productStocks) {

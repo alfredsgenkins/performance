@@ -16,9 +16,7 @@
             <module name="Magento_Catalog"/>
             <module name="Magento_Swatches"/>
             <module name="Magento_Store"/>
-            <module name="Magento_InventoryApi"/>
             <module name="Magento_Eav"/>
-            <module name="Magento_InventoryCatalog"/>
             <module name="Magento_CatalogInventory"/>
             <module name="Magento_CatalogGraphQl"/>
         </sequence>
