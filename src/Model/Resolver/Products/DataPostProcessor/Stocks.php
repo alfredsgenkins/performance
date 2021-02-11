@@ -11,13 +11,14 @@ declare(strict_types=1);
 namespace ScandiPWA\Performance\Model\Resolver\Products\DataPostProcessor;
 
 use Magento\CatalogInventory\Api\Data\StockStatusInterface;
-use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use ScandiPWA\Performance\Api\ProductsDataPostProcessorInterface;
 use ScandiPWA\Performance\Model\Resolver\ResolveInfoFieldsTrait;
 use Magento\CatalogInventory\Api\StockStatusCriteriaInterfaceFactory;
 use Magento\CatalogInventory\Api\StockConfigurationInterface;
 use Magento\CatalogInventory\Api\StockStatusRepositoryInterface;
+
+use Magento\CatalogInventory\Api\StockRegistryInterface;
 
 /**
  * Class Images
@@ -51,31 +52,30 @@ class Stocks implements ProductsDataPostProcessorInterface
     protected $stockConfiguration;
 
     /**
-     * @var SearchCriteriaBuilder
-     */
-    protected $searchCriteriaBuilder;
-
-    /**
      * @var ScopeConfigInterface
      */
     protected $scopeConfig;
 
     /**
+     * @var StockRegistryInterface
+     */
+    private $stockRegistry;
+
+    /**
      * Stocks constructor.
      * @param StockStatusCriteriaInterfaceFactory $stock
-     * @param SearchCriteriaBuilder $searchCriteriaBuilder
      * @param ScopeConfigInterface $scopeConfig
      * @param StockConfigurationInterface $stockConfiguration
      * @param StockStatusRepositoryInterface $stockItemRepository
      */
     public function __construct(
+        StockRegistryInterface $stockRegistry,
         StockStatusCriteriaInterfaceFactory $stock,
-        SearchCriteriaBuilder $searchCriteriaBuilder,
         ScopeConfigInterface $scopeConfig,
         StockConfigurationInterface $stockConfiguration,
         StockStatusRepositoryInterface $stockStatusRepository
     ) {
-        $this->searchCriteriaBuilder = $searchCriteriaBuilder;
+        $this->stockRegistry = $stockRegistry;
         $this->stockConfiguration = $stockConfiguration;
         $this->stockStatusRepository = $stockStatusRepository;
         $this->stock = $stock;
@@ -135,7 +135,8 @@ class Stocks implements ProductsDataPostProcessorInterface
         }, $products);
 
         $criteria = $this->stock->create();
-        $criteria->addField('products_filter', $productIds);
+        // Yes, it says "int" but it also accepts a list of products!
+        $criteria->setProductsFilter($productIds);
         $criteria->setScopeFilter($this->stockConfiguration->getDefaultScopeId());
         $collection = $this->stockStatusRepository->getList($criteria);
         $stockStatuses = $collection->getItems();
